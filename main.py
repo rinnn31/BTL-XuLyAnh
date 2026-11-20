@@ -70,45 +70,23 @@ class App:
         self.min_area = tk.StringVar(value="8")
         ttk.Entry(left, textvariable=self.min_area, width=12).pack(anchor="w")
 
-        # Dung sai lệch biên: weak quyết định hình dạng vùng lỗi,
-        # strong quyết định vùng nào được công nhận là lỗi (strong >= weak)
         ttk.Label(left, text="Dung sai biên (px)", background="#172235").pack(anchor="w", pady=(12, 3))
-        tol_frame = ttk.Frame(left, style="Panel.TFrame")
-        tol_frame.pack(anchor="w", fill="x")
+        self.tol = tk.StringVar(value="1")
+        ttk.Spinbox(left, from_=0, to=10, textvariable=self.tol, width=6).pack(anchor="w")
 
-        weak_col = ttk.Frame(tol_frame, style="Panel.TFrame")
-        weak_col.pack(side="left", padx=(0, 14))
-        ttk.Label(weak_col, text="Weak", style="Muted.TLabel",
-                  background="#172235").pack(anchor="w")
-        self.tol_weak = tk.StringVar(value="1")
-        ttk.Spinbox(weak_col, from_=0, to=10, textvariable=self.tol_weak,
-                    width=5).pack(anchor="w")
-
-        strong_col = ttk.Frame(tol_frame, style="Panel.TFrame")
-        strong_col.pack(side="left")
-        ttk.Label(strong_col, text="Strong", style="Muted.TLabel",
-                  background="#172235").pack(anchor="w")
-        self.tol_strong = tk.StringVar(value="1")
-        ttk.Spinbox(strong_col, from_=0, to=10, textvariable=self.tol_strong,
-                    width=5).pack(anchor="w")
-
-        ttk.Label(left, text="Strong ≥ Weak. Strong lớn hơn → ít nhiễu hơn\nnhưng dễ bỏ sót lỗi nhỏ.",
+        ttk.Label(left, text="Dung sai lớn hơn → ít nhiễu hơn\nnhưng dễ bỏ sót lỗi nhỏ.",
                   style="Muted.TLabel", background="#172235",
                   wraplength=220, font=("Segoe UI", 8)).pack(anchor="w", pady=(4, 0))
 
-        self.align_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(left, text="Tự căn chỉnh ảnh", variable=self.align_var).pack(anchor="w", pady=12)
-        ttk.Button(left, text="PHÂN TÍCH ẢNH", command=self.run_detection).pack(fill="x", pady=(10, 6))
+        ttk.Button(left, text="PHÂN TÍCH ẢNH", command=self.run_detection).pack(fill="x", pady=(16, 6))
         ttk.Button(left, text="Lưu ảnh kết quả", command=self.save_result).pack(fill="x", pady=5)
 
         right = ttk.Frame(body)
         right.pack(side="left", fill="both", expand=True)
 
-        # Khu vực hiển thị hai ảnh
         image_frame = ttk.Frame(right)
         image_frame.pack(fill="both", expand=True)
 
-        # Khung ảnh REF
         ref_frame = ttk.Frame(image_frame, style="Panel.TFrame", padding=10)
         ref_frame.pack(side="left", fill="both", expand=True, padx=(0, 7))
 
@@ -128,7 +106,6 @@ class App:
         )
         self.ref_preview.pack(fill="both", expand=True)
 
-        # Khung ảnh TEST
         test_frame = ttk.Frame(image_frame, style="Panel.TFrame", padding=10)
         test_frame.pack(side="left", fill="both", expand=True, padx=(7, 0))
 
@@ -147,6 +124,7 @@ class App:
             fg="#91a1b8"
         )
         self.test_preview.pack(fill="both", expand=True)
+
         bottom = ttk.Frame(right, style="Panel.TFrame", padding=14)
         bottom.pack(fill="x", pady=(14, 0))
         self.summary = ttk.Label(bottom, text="Chưa có kết quả phân tích",
@@ -174,7 +152,6 @@ class App:
 
         pil = Image.fromarray(rgb)
 
-        # Lấy kích thước khung hiển thị
         target_label.update_idletasks()
         max_w = max(target_label.winfo_width(), 300)
         max_h = max(target_label.winfo_height(), 300)
@@ -216,7 +193,6 @@ class App:
 
     @staticmethod
     def _read_int(var, name, minimum=0):
-        """Đọc số nguyên từ ô nhập, báo lỗi rõ ràng nếu không hợp lệ."""
         try:
             value = int(var.get().strip())
         except ValueError:
@@ -235,17 +211,9 @@ class App:
 
         try:
             min_area = self._read_int(self.min_area, "Diện tích tối thiểu", 0)
-            tol_weak = self._read_int(self.tol_weak, "Dung sai Weak", 0)
-            tol_strong = self._read_int(self.tol_strong, "Dung sai Strong", 0)
+            tol = self._read_int(self.tol, "Dung sai biên", 0)
         except ValueError as exc:
             messagebox.showwarning("Giá trị không hợp lệ", str(exc))
-            return
-
-        if tol_strong < tol_weak:
-            messagebox.showwarning(
-                "Giá trị không hợp lệ",
-                "Dung sai Strong phải lớn hơn hoặc bằng Weak."
-            )
             return
 
         try:
@@ -256,19 +224,16 @@ class App:
                 template,
                 test,
                 min_area=min_area,
-                tol_weak=tol_weak,
-                tol_strong=tol_strong,
-                use_alignment=self.align_var.get()
+                tol=tol
             )
 
             result["visual"] = draw_detections(
-                result["aligned"],
+                test,
                 result["detections"]
             )
 
             self.current_result = result
 
-            # Hiển thị lại hai ảnh gốc
             self.show_preview(template, self.ref_preview)
             self.show_preview(result["visual"], self.test_preview)
 
@@ -277,7 +242,7 @@ class App:
             self.summary.config(
                 text=(
                     f'Phát hiện {len(result["detections"])} vùng nghi lỗi '
-                    f'(weak={tol_weak}, strong={tol_strong})'
+                    f'(tol={tol})'
                 )
             )
 

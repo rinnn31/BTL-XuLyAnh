@@ -11,27 +11,21 @@ from evaluation.batch_evaluate import (
 )
 from config import REPORT_DIR
 
-# (tol_weak, tol_strong), luôn cần tol_strong >= tol_weak
-DEFAULT_CONFIGS = [(1, 1), (1, 2), (1, 3), (1, 4), (0, 2), (0, 3), (2, 3)]
+DEFAULT_TOLS = [0, 1, 2, 3]
 
 
-def parse_configs(text):
-    """'1,1 1,2 2,3' -> [(1, 1), (1, 2), (2, 3)]"""
-    configs = []
-    for item in text.split():
-        weak, strong = item.split(",")
-        configs.append((int(weak), int(strong)))
-    return configs
+def parse_tols(text):
+    """'0 1 2 3' -> [0, 1, 2, 3]"""
+    return [int(item) for item in text.split()]
 
 
 def compare(
     dataset,
-    configs=DEFAULT_CONFIGS,
+    tols=DEFAULT_TOLS,
     min_area=8,
     max_area=4000,
     merge_size=5,
     iou=0.33,
-    use_alignment=False,
     match_mode="center",
     pad=0
 ):
@@ -47,12 +41,8 @@ def compare(
     print(f"Tìm thấy {len(pairs)} cặp ảnh | match={match_mode} pad={pad}")
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    for tol_weak, tol_strong in configs:
-        if tol_strong < tol_weak:
-            print(f"Bỏ qua ({tol_weak},{tol_strong}): tol_strong phải >= tol_weak")
-            continue
-
-        name = f"weak{tol_weak}_strong{tol_strong}"
+    for tol in tols:
+        name = f"tol{tol}"
 
         out = evaluate_pairs(
             pairs,
@@ -62,10 +52,8 @@ def compare(
             pad=pad,
             min_area=min_area,
             max_area=max_area,
-            tol_weak=tol_weak,
-            tol_strong=tol_strong,
+            tol=tol,
             merge_size=merge_size,
-            use_alignment=use_alignment,
         )
 
         tp, fp, fn = out["tp"], out["fp"], out["fn"]
@@ -76,8 +64,7 @@ def compare(
 
         rows.append({
             "config": name,
-            "tol_weak": tol_weak,
-            "tol_strong": tol_strong,
+            "tol": tol,
             "tp": tp,
             "fp": fp,
             "fn": fn,
@@ -101,7 +88,6 @@ def compare(
             f"Class acc: {out['cls_accuracy']:.4f}"
         )
 
-        # Mỗi cấu hình xuất riêng một ma trận nhầm lẫn
         export_confusion_outputs(
             out["cm"],
             prefix=f"{name}_",
@@ -125,7 +111,6 @@ def compare(
         writer.writeheader()
         writer.writerows(class_rows)
 
-    # ---- Bảng tổng hợp (sắp theo F1) ----
     print("\n========== SO SÁNH CẤU HÌNH (sắp theo F1) ==========")
     for row in sorted(rows, key=lambda r: r["f1"], reverse=True):
         print(
@@ -135,7 +120,6 @@ def compare(
             f"F1={row['f1']:.4f} | ClsAcc={row['cls_accuracy']:.4f}"
         )
 
-    # ---- Recall từng lớp: để thấy lớp nhỏ (Spur, Mousebite...) có bị mất không ----
     print("\n========== RECALL THEO LỚP ==========")
     print(f"{'config':16} " + " ".join(f"{c:>10}" for c in LABELS))
     for row in rows:
@@ -163,20 +147,19 @@ def compare(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="So sánh các cấu hình tolerance (weak/strong) của bộ phát hiện lỗi PCB"
+        description="So sánh các cấu hình tolerance của bộ phát hiện lỗi PCB"
     )
 
     parser.add_argument("--dataset", required=True)
     parser.add_argument(
-        "--configs",
+        "--tols",
         default=None,
-        help='Danh sách "weak,strong" cách nhau bằng khoảng trắng, vd: "1,1 1,2 1,3"',
+        help='Danh sách giá trị tol cách nhau bằng khoảng trắng, vd: "0 1 2 3"',
     )
     parser.add_argument("--min-area", type=int, default=8)
     parser.add_argument("--max-area", type=int, default=4000)
     parser.add_argument("--merge-size", type=int, default=5)
     parser.add_argument("--iou", type=float, default=0.33)
-    parser.add_argument("--align", action="store_true")
     parser.add_argument("--match", choices=["center", "iou"], default="center")
     parser.add_argument("--pad", type=int, default=0)
 
@@ -184,12 +167,11 @@ if __name__ == "__main__":
 
     compare(
         dataset=args.dataset,
-        configs=parse_configs(args.configs) if args.configs else DEFAULT_CONFIGS,
+        tols=parse_tols(args.tols) if args.tols else DEFAULT_TOLS,
         min_area=args.min_area,
         max_area=args.max_area,
         merge_size=args.merge_size,
         iou=args.iou,
-        use_alignment=args.align,
         match_mode=args.match,
         pad=args.pad
     )

@@ -1,31 +1,28 @@
 import cv2
-import numpy as np
-from .image_processor import align_to_template, copper_masks, preprocess
+from . import cv_impl as cv
+from .image_processor import copper_masks, preprocess
 from .defect_classifier import classify_missing, classify_extra, region_sign
 
 
-def detect_defects(template, test, min_area=8, max_area=4000,
-                   tol_weak=1, tol_strong=2, merge_size=5,
-                   use_alignment=False, **_):
+def detect_defects(template, test, min_area=8, max_area=4000, tol = 1, merge_size=5, **_):
 
-    aligned = align_to_template(template, test) if use_alignment else test
     ref_cu, tst_cu, missing, extra = copper_masks(
-        template, aligned, tol_weak, tol_strong)
-    ref_g, tst_g = preprocess(template), preprocess(aligned)
+        template, test, tol)
+    ref_g, tst_g = preprocess(template), preprocess(test)
 
     # Gom missing + extra thành các vùng khác biệt chung
-    both = cv2.bitwise_or(missing, extra)
-    merge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (merge_size, merge_size))
-    both = cv2.morphologyEx(both, cv2.MORPH_CLOSE, merge)
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(both, connectivity=8)
+    both = cv.bitwise_or(missing, extra)
+    merge = cv.getStructuringElement(cv.MORPH_ELLIPSE, (merge_size, merge_size))
+    both = cv.morphologyEx(both, cv.MORPH_CLOSE, merge)
+    n, labels, stats, _ = cv.connectedComponentsWithStats(both, connectivity=8)
 
     detections = []
     for i in range(1, n):
         x, y, w, h, _a = stats[i]
-        comp = (labels == i).astype(np.uint8) * 255
-        m_blob = cv2.bitwise_and(missing, comp)
-        e_blob = cv2.bitwise_and(extra, comp)
-        m, e = cv2.countNonZero(m_blob), cv2.countNonZero(e_blob)
+        comp = (labels == i).astype("uint8") * 255
+        m_blob = cv.bitwise_and(missing, comp)
+        e_blob = cv.bitwise_and(extra, comp)
+        m, e = cv.countNonZero(m_blob), cv.countNonZero(e_blob)
         area = m + e
         if area < min_area or area > max_area:
             continue
@@ -46,7 +43,6 @@ def detect_defects(template, test, min_area=8, max_area=4000,
 
     return {
         "detections": sorted(detections, key=lambda d: d["area_px"], reverse=True),
-        "aligned": aligned,
         "mask": both
     }
 
@@ -58,5 +54,5 @@ def draw_detections(image, detections):
         cv2.rectangle(result, (x1, y1), (x2, y2), (40, 70, 235), 2)
         caption = f'{index}. {item["label"]} | {item["width"]}x{item["height"]}'
         cv2.putText(result, caption, (x1, max(18, y1 - 7)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (40, 70, 235), 1, cv2.LINE_AA)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.42, (40, 70, 235), 1, cv.LINE_AA)
     return result

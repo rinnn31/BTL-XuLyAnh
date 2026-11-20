@@ -1,12 +1,12 @@
-import cv2
 import numpy as np
+from . import cv_impl as cv
 
 # Phân loại theo luật hình học và tô-pô, không dùng mô hình học.
 # Thiếu đồng: Open, Mousebite, Pin-hole. Thừa đồng: Short, Spur, Copper.
 
 
 def _ncomp(mask):
-    return cv2.connectedComponents(mask, connectivity=8)[0] - 1
+    return cv.connectedComponents(mask, connectivity=8)[0] - 1
 
 
 def _topology_delta(ref_cu, tst_cu, x, y, w, h, pad=8):
@@ -18,22 +18,22 @@ def _topology_delta(ref_cu, tst_cu, x, y, w, h, pad=8):
 
 
 def _ring(blob, r):
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
-    return cv2.bitwise_and(cv2.dilate(blob, k), cv2.bitwise_not(blob))
+    k = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+    return cv.bitwise_and(cv.dilate(blob, k), cv.bitwise_not(blob))
 
 
 def _copper_arcs(ref_cu, blob, r=3):
     """Số cung đồng (của ảnh mẫu) nằm trên vòng quanh blob."""
-    arcs = cv2.bitwise_and(_ring(blob, r), ref_cu)
-    n, _, stats, _ = cv2.connectedComponentsWithStats(arcs, connectivity=8)
-    return sum(1 for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= 2 * r)
+    arcs = cv.bitwise_and(_ring(blob, r), ref_cu)
+    n, _, stats, _ = cv.connectedComponentsWithStats(arcs, connectivity=8)
+    return sum(1 for i in range(1, n) if stats[i, cv.CC_STAT_AREA] >= 2 * r)
 
 
 def _ring_copper_ratio(mask, blob, r=3):
     """Tỉ lệ vòng quanh blob nằm trên mask."""
     ring = _ring(blob, r)
-    n = cv2.countNonZero(ring)
-    return cv2.countNonZero(cv2.bitwise_and(ring, mask)) / n if n else 0.0
+    n = cv.countNonZero(ring)
+    return cv.countNonZero(cv.bitwise_and(ring, mask)) / n if n else 0.0
 
 
 def region_sign(ref_g, tst_g, comp, bright):

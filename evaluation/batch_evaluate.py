@@ -22,13 +22,12 @@ CLASS_NAMES = {
     6: "Pin-hole",
 }
 LABELS = list(CLASS_NAMES.values())
-NONE = "None"                      # bỏ sót (hàng GT) hoặc phát hiện thừa (cột dự đoán)
+NONE = "None"
 ALL_LABELS = LABELS + [NONE]
 LABEL_INDEX = {name: i for i, name in enumerate(ALL_LABELS)}
 
 
 def find_pairs(root):
-    """Tìm cặp DeepPCB theo hậu tố _temp.jpg và _test.jpg."""
     root = Path(root)
 
     for test_path in sorted(root.rglob("*_test.jpg")):
@@ -39,7 +38,6 @@ def find_pairs(root):
         if template_path.exists():
             prefix = test_path.name.replace("_test.jpg", "")
             candidates = [
-                # cấu trúc gốc DeepPCB: group00041/00041_not/00041000.txt
                 test_path.parent.with_name(test_path.parent.name + "_not") / f"{prefix}.txt",
                 test_path.with_name(f"{prefix}.txt"),
                 test_path.with_name(f"{prefix}_not.txt"),
@@ -65,12 +63,6 @@ def prf(tp, fp, fn):
 
 
 def match_pairs(predictions, ground_truth, iou_threshold=0.33, mode="iou", pad=0):
-    """Ghép 1-1 (tham lam). Trả về list (pred_idx, gt_idx).
-
-    mode="iou":    IoU >= ngưỡng; box dự đoán có thể nở thêm `pad` px mỗi phía.
-    mode="center": tâm box dự đoán nằm trong box nhãn, ưu tiên cặp có tâm gần nhau.
-                   Phù hợp vì box nhãn DeepPCB rộng hơn blob chênh lệch nhiều.
-    """
     candidates = []
     for pi, pred in enumerate(predictions):
         p = {
@@ -99,14 +91,6 @@ def match_pairs(predictions, ground_truth, iou_threshold=0.33, mode="iou", pad=0
 
 def evaluate_pairs(pairs, iou=0.33, save_images=False, verbose=True,
                    match_mode="center", pad=0, **detect_params):
-    """Chạy detector trên toàn bộ cặp ảnh.
-
-    Trả về dict gồm rows (theo ảnh), tp/fp/fn và ma trận nhầm lẫn `cm`
-    kích thước (6 lớp + None) x (6 lớp + None): hàng = nhãn thật, cột = dự đoán.
-      - cm[gt][pred]  : khớp bằng IoU, nhãn thật gt, dự đoán pred
-      - cm[gt][None]  : bỏ sót (FN)
-      - cm[None][pred]: phát hiện thừa (FP)
-    """
     n_labels = len(ALL_LABELS)
     cm = np.zeros((n_labels, n_labels), dtype=np.int64)
     totals = {"tp": 0, "fp": 0, "fn": 0}
@@ -173,7 +157,7 @@ def evaluate_pairs(pairs, iou=0.33, save_images=False, verbose=True,
         })
 
         if save_images:
-            visual = draw_detections(result["aligned"], detections)
+            visual = draw_detections(test, detections)
             VISUAL_DIR.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(VISUAL_DIR / f"{test_path.stem}_result.png"), visual)
 
@@ -199,7 +183,6 @@ def evaluate_pairs(pairs, iou=0.33, save_images=False, verbose=True,
 
 
 def print_detection_matrix(tp, fp, fn):
-    """Ma trận kết quả phát hiện. TN không xác định trong object detection."""
     print("\n========== DETECTION MATRIX ==========")
     print(f"{'':25} {'Dự đoán khớp':>15} {'Không khớp':>15}")
     print(f"{'Ground Truth':25} {tp:>15} {fn:>15}")
@@ -210,12 +193,11 @@ def print_detection_matrix(tp, fp, fn):
 
 
 def per_class_metrics(cm):
-    """Precision/Recall/F1 từng lớp (tính cả FP/FN do không ghép được)."""
     report = []
     for i, name in enumerate(LABELS):
         tp = int(cm[i, i])
-        fp = int(cm[:, i].sum() - tp)      # dự đoán là lớp này nhưng sai/thừa
-        fn = int(cm[i, :].sum() - tp)      # nhãn thật là lớp này nhưng sai/bỏ sót
+        fp = int(cm[:, i].sum() - tp)
+        fn = int(cm[i, :].sum() - tp)
         p, r, f1 = prf(tp, fp, fn)
         report.append({
             "class": name, "support": int(cm[i, :].sum()),
@@ -235,7 +217,6 @@ def save_confusion_matrix_csv(cm, output_path):
 
 def save_class_confusion_matrix(cm, output_path, normalize=False,
                                 title="PCB Defect - Confusion Matrix"):
-    """Vẽ ma trận nhầm lẫn (hàng = nhãn thật, cột = dự đoán, có thêm lớp None)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -271,7 +252,6 @@ def save_class_confusion_matrix(cm, output_path, normalize=False,
 
 
 def export_confusion_outputs(cm, prefix="", title="PCB Defect - Confusion Matrix"):
-    """Xuất CSV + PNG (số lượng và chuẩn hoá) + báo cáo từng lớp vào REPORT_DIR."""
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
     csv_path = REPORT_DIR / f"{prefix}confusion_matrix.csv"
@@ -296,12 +276,10 @@ def run(
     dataset,
     min_area=8,
     max_area=4000,
-    tol_weak=1,
-    tol_strong=1,
+    tol=1,
     merge_size=5,
     iou=0.33,
     save_images=False,
-    use_alignment=False,
     match_mode="center",
     pad=0
 ):
@@ -318,10 +296,8 @@ def run(
         pad=pad,
         min_area=min_area,
         max_area=max_area,
-        tol_weak=tol_weak,
-        tol_strong=tol_strong,
+        tol=tol,
         merge_size=merge_size,
-        use_alignment=use_alignment,
     )
     rows, cm = out["rows"], out["cm"]
     tp, fp, fn = out["tp"], out["fp"], out["fn"]
@@ -353,10 +329,8 @@ def run(
         f"IoU threshold (chỉ dùng khi match=iou): {iou}\n"
         f"Min area: {min_area}\n"
         f"Max area: {max_area}\n"
-        f"Tolerance weak: {tol_weak}\n"
-        f"Tolerance strong: {tol_strong}\n"
+        f"Tolerance: {tol}\n"
         f"Merge size: {merge_size}\n"
-        f"Alignment: {use_alignment}\n"
     )
 
     summary_path = REPORT_DIR / "summary.txt"
@@ -389,12 +363,10 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--min-area", type=int, default=8)
     parser.add_argument("--max-area", type=int, default=4000)
-    parser.add_argument("--tol-weak", type=int, default=1)
-    parser.add_argument("--tol-strong", type=int, default=1)
+    parser.add_argument("--tol", type=int, default=1)
     parser.add_argument("--merge-size", type=int, default=5)
     parser.add_argument("--iou", type=float, default=0.33)
     parser.add_argument("--save-images", action="store_true")
-    parser.add_argument("--align", action="store_true")
     parser.add_argument("--match", choices=["center", "iou"], default="center")
     parser.add_argument("--pad", type=int, default=0)
 
@@ -404,12 +376,10 @@ if __name__ == "__main__":
         dataset=args.dataset,
         min_area=args.min_area,
         max_area=args.max_area,
-        tol_weak=args.tol_weak,
-        tol_strong=args.tol_strong,
+        tol=args.tol,
         merge_size=args.merge_size,
         iou=args.iou,
         save_images=args.save_images,
-        use_alignment=args.align,
         match_mode=args.match,
         pad=args.pad
     )
